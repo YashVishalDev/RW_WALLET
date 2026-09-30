@@ -19,9 +19,25 @@ const toggleTheme = () => {
         };
 
 const getProfileAvatarUrl = (user) => {
-            if (!user) return PREMIUM_AVATARS[0];
+            const defaultAvatars = [
+                'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&h=150&q=80',
+                'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&w=150&h=150&q=80',
+                'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&h=150&q=80',
+                'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=150&h=150&q=80',
+                'https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?auto=format&fit=crop&w=150&h=150&q=80',
+                'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150&h=150&q=80',
+                'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&w=150&h=150&q=80',
+                'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=150&h=150&q=80',
+                'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&h=150&q=80',
+                'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=150&h=150&q=80'
+            ];
+            const pool = (typeof window !== 'undefined' && Array.isArray(window.PREMIUM_AVATARS) && window.PREMIUM_AVATARS.length >= 10)
+                ? window.PREMIUM_AVATARS
+                : defaultAvatars;
+
+            if (!user) return pool[0];
             const localAvatar = localStorage.getItem(`rw_profile_avatar_${user.uid || user.id || ''}`);
-            if (localAvatar) return localAvatar;
+            if (localAvatar && !localAvatar.includes('3135715.png')) return localAvatar;
             
             // 1. Admin always uses the app logo
             const uId = user.uid || user.id || '';
@@ -29,13 +45,14 @@ const getProfileAvatarUrl = (user) => {
                 return 'https://i.ibb.co/x8YBYwGG/6233389803554672153.jpg';
             }
             
-            // 2. If user has chosen a profile photo, return it
-            if (user.profilePhoto || user.profile_photo || user.avatarUrl || user.avatar_url) {
-                return user.profilePhoto || user.profile_photo || user.avatarUrl || user.avatar_url;
+            // 2. If user has chosen a profile photo, return it (filtering out generic placeholder)
+            const customPhoto = user.profilePhoto || user.profile_photo || user.avatarUrl || user.avatar_url || user.photoURL;
+            if (customPhoto && typeof customPhoto === 'string' && customPhoto.startsWith('http') && !customPhoto.includes('3135715.png')) {
+                return customPhoto;
             }
             
             // 3. Fallback: Determine default based on name (male or female)
-            const name = String(user.name || user.userName || user.email || '').toLowerCase().trim();
+            const name = String(user.name || user.userName || user.email || user.displayName || '').toLowerCase().trim();
             
             // Common female name keywords, endings, or prefixes
             const femaleKeywords = [
@@ -44,19 +61,18 @@ const getProfileAvatarUrl = (user) => {
                 'sushma', 'rekha', 'pinky', 'monika', 'payal', 'asha', 'babita', 'radha', 'sharda', 'mamta', 'sapna',
                 'isha', 'tanya', 'riya', 'ananya', 'rashmi', 'shruti', 'komal', 'arti', 'renu', 'savita', 'geeta',
                 'sita', 'gita', 'anamika', 'archana', 'disha', 'megha', 'nisha', 'prerna', 'richa', 'shweta', 'sheetal',
-                'sakshi', 'simran', 'tanvi', 'vaishali', 'varsha', 'yashaswi', 'girl', 'female', 'woman', 'lady'
+                'sakshi', 'simran', 'tanvi', 'vaishali', 'varsha', 'yashaswi', 'girl', 'female', 'woman', 'lady', 'aasiya', 'afroj'
             ];
             
             const isFemale = femaleKeywords.some(kw => name.includes(kw)) ||
                              name.endsWith('a') || name.endsWith('i') || name.endsWith('ee') || name.endsWith('ya') || name.endsWith('y');
             
+            const charSum = [...name].reduce((sum, char) => sum + char.charCodeAt(0), 0);
             if (isFemale) {
-                const femaleAvatars = PREMIUM_AVATARS.slice(5, 10);
-                const charSum = [...name].reduce((sum, char) => sum + char.charCodeAt(0), 0);
+                const femaleAvatars = pool.slice(5, 10);
                 return femaleAvatars[charSum % femaleAvatars.length];
             } else {
-                const maleAvatars = PREMIUM_AVATARS.slice(0, 5);
-                const charSum = [...name].reduce((sum, char) => sum + char.charCodeAt(0), 0);
+                const maleAvatars = pool.slice(0, 5);
                 return maleAvatars[charSum % maleAvatars.length];
             }
         };

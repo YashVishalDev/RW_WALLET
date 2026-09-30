@@ -181,6 +181,7 @@ const populateFallbackAdminChatsFromUsers = () => {
                     userName: isOwner && (u.role === 'admin' || u.role === 'subadmin') ? (u.name || u.email || 'Sub-Admin') : (u.name || u.email || 'User'),
                     userEmail: u.email || '',
                     userMobile: u.mobile || u.phoneNumber || '',
+                    userAvatar: resolveChatUserAvatar(u),
                     lastMessage: lastMsgObj.text,
                     lastSenderId: lastMsgObj.senderId || uId,
                     updatedAt: timestampToMillis(lastMsgObj.createdAt) || Date.now()
@@ -214,58 +215,103 @@ const resolveChatUserAvatar = (chat = {}) => {
         return getOwnerProfile()?.userAvatar || RW_LOGO_URL;
     }
 
-    // 1. Direct explicit avatar if valid
+    const userName = chat.userName || chat.name || '';
+    const userEmail = chat.userEmail || chat.email || '';
+
+    const callAvatarFn = (userObj) => {
+        try {
+            if (typeof window !== 'undefined' && typeof window.getProfileAvatarUrl === 'function') {
+                const res = window.getProfileAvatarUrl(userObj);
+                if (res && typeof res === 'string' && !res.includes('3135715.png')) return res;
+            }
+        } catch (_) {}
+        return null;
+    };
+
+    // 1. Direct explicit avatar if valid (and NOT 3135715.png)
     const explicit = chat.userAvatar || chat.avatarUrl || chat.avatar_url || chat.profilePhoto || chat.profile_photo;
-    if (explicit && typeof explicit === 'string' && explicit.startsWith('http') && !explicit.includes('flaticon.com/512/3135/3135715.png')) {
+    if (explicit && typeof explicit === 'string' && explicit.startsWith('http') && !explicit.includes('3135715.png')) {
         return explicit;
     }
 
     // 2. Look in allUsersCache
     const userDoc = (typeof allUsersCache !== 'undefined' && Array.isArray(allUsersCache))
-        ? allUsersCache.find(u => String(u.id || u.uid) === String(userId) || (chat.userEmail && u.email === chat.userEmail))
+        ? allUsersCache.find(u => String(u.id || u.uid) === String(userId) || (userEmail && u.email === userEmail))
         : null;
 
     if (userDoc) {
         const docPic = userDoc.profilePhoto || userDoc.profile_photo || userDoc.avatarUrl || userDoc.avatar_url || userDoc.photoURL;
-        if (docPic && typeof docPic === 'string' && docPic.startsWith('http') && !docPic.includes('flaticon.com/512/3135/3135715.png')) {
+        if (docPic && typeof docPic === 'string' && docPic.startsWith('http') && !docPic.includes('3135715.png')) {
             return docPic;
         }
-        if (typeof getProfileAvatarUrl === 'function') {
-            const url = getProfileAvatarUrl(userDoc);
-            if (url) return url;
-        }
+        const url = callAvatarFn(userDoc);
+        if (url) return url;
     }
 
     // 3. Look in localStorage cached user doc
     if (typeof readJsonCache === 'function') {
         const cachedUser = readJsonCache(`rw_wallet_user_cache_${userId}`);
         if (cachedUser) {
-            const cachedPic = cachedUser.profilePhoto || cachedUser.profile_photo || cachedUser.avatarUrl || cachedUser.avatar_url;
-            if (cachedPic && typeof cachedPic === 'string' && cachedPic.startsWith('http') && !cachedPic.includes('flaticon.com/512/3135/3135715.png')) {
+            const cachedPic = cachedUser.profilePhoto || cachedUser.profile_photo || cachedUser.avatarUrl || cachedUser.avatar_url || cachedUser.photoURL;
+            if (cachedPic && typeof cachedPic === 'string' && cachedPic.startsWith('http') && !cachedPic.includes('3135715.png')) {
                 return cachedPic;
             }
-            if (typeof getProfileAvatarUrl === 'function') {
-                const url = getProfileAvatarUrl(cachedUser);
-                if (url) return url;
-            }
+            const url = callAvatarFn(cachedUser);
+            if (url) return url;
         }
     }
 
     // 4. Look in local avatar key
-    const localAvatar = localStorage.getItem(`rw_profile_avatar_${userId}`);
-    if (localAvatar) return localAvatar;
+    try {
+        const localAvatar = localStorage.getItem(`rw_profile_avatar_${userId}`);
+        if (localAvatar && !localAvatar.includes('3135715.png')) return localAvatar;
+    } catch (_) {}
 
     // 5. Use getProfileAvatarUrl fallback based on name/gender
-    if (typeof getProfileAvatarUrl === 'function') {
-        return getProfileAvatarUrl({
-            uid: userId,
-            id: userId,
-            name: chat.userName || chat.name,
-            email: chat.userEmail || chat.email
-        });
-    }
+    const nameUrl = callAvatarFn({
+        uid: userId,
+        id: userId,
+        name: userName,
+        email: userEmail
+    });
+    if (nameUrl) return nameUrl;
 
-    return 'https://cdn-icons-png.flaticon.com/512/3135/3135715.png';
+    // 6. Direct fallback from window.PREMIUM_AVATARS or UI Avatars (NEVER return 3135715.png)
+    const avatars = (typeof window !== 'undefined' && Array.isArray(window.PREMIUM_AVATARS) && window.PREMIUM_AVATARS.length >= 10)
+        ? window.PREMIUM_AVATARS
+        : [
+            'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&h=150&q=80',
+            'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&w=150&h=150&q=80',
+            'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&h=150&q=80',
+            'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=150&h=150&q=80',
+            'https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?auto=format&fit=crop&w=150&h=150&q=80',
+            'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150&h=150&q=80',
+            'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&w=150&h=150&q=80',
+            'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=150&h=150&q=80',
+            'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&h=150&q=80',
+            'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=150&h=150&q=80'
+        ];
+
+    const cleanName = String(userName || userEmail || userId || 'User').toLowerCase().trim();
+    const femaleKeywords = [
+        'devi', 'kumari', 'lata', 'seema', 'anita', 'sunita', 'kiran', 'pooja', 'priya', 'neha', 'divya',
+        'kajal', 'jyoti', 'kavita', 'preeti', 'ritu', 'swati', 'sneha', 'alka', 'usha', 'shanti', 'meena',
+        'sushma', 'rekha', 'pinky', 'monika', 'payal', 'asha', 'babita', 'radha', 'sharda', 'mamta', 'sapna',
+        'isha', 'tanya', 'riya', 'ananya', 'rashmi', 'shruti', 'komal', 'arti', 'renu', 'savita', 'geeta',
+        'sita', 'gita', 'anamika', 'archana', 'disha', 'megha', 'nisha', 'prerna', 'richa', 'shweta', 'sheetal',
+        'sakshi', 'simran', 'tanvi', 'vaishali', 'varsha', 'yashaswi', 'girl', 'female', 'woman', 'lady', 'aasiya', 'afroj'
+    ];
+    const isFemale = femaleKeywords.some(kw => cleanName.includes(kw)) ||
+                     cleanName.endsWith('a') || cleanName.endsWith('i') || cleanName.endsWith('ee') || cleanName.endsWith('ya') || cleanName.endsWith('y');
+
+    const charSum = [...cleanName].reduce((sum, char) => sum + char.charCodeAt(0), 0);
+    if (isFemale) {
+        const pool = avatars.slice(5, 10);
+        return pool[charSum % pool.length];
+    } else {
+        const pool = avatars.slice(0, 5);
+        return pool[charSum % pool.length];
+    }
 };
 
 const fetchMissingChatAvatars = async (chats = []) => {
@@ -300,13 +346,23 @@ const fetchMissingChatAvatars = async (chats = []) => {
                     if (Array.isArray(allUsersCache)) {
                         allUsersCache.push(data);
                     }
+                    if (typeof writeJsonCache === 'function') {
+                        writeJsonCache(`rw_wallet_user_cache_${snap.id}`, data);
+                    }
                     addedAny = true;
                 }
             });
         }
 
-        if (addedAny && document.getElementById('admin-chats-list')) {
-            renderAdminChatsList();
+        if (addedAny) {
+            if (Array.isArray(allSupportChatsCache)) {
+                allSupportChatsCache.forEach(c => {
+                    c.userAvatar = resolveChatUserAvatar(c);
+                });
+            }
+            if (document.getElementById('admin-chats-list')) {
+                renderAdminChatsList();
+            }
         }
     } catch (e) {
         console.warn('Fetch missing chat avatars failed:', e);
@@ -547,7 +603,7 @@ const renderAdminChatsList = () => {
                     const isOwnerChat = chat.userId === ADMIN_UID || chat.id === ADMIN_UID || chat.roomId?.includes(ADMIN_UID);
                     const ownerProfile = isOwnerChat ? getOwnerProfile() : null;
                     const displayName = isOwnerChat && !isOwner ? ownerProfile.userName : (chat.userName || 'User');
-                    const avatarUrl = isOwnerChat && !isOwner ? ownerProfile.userAvatar : (chat.userAvatar || 'https://cdn-icons-png.flaticon.com/512/3135/3135715.png');
+                    const avatarUrl = isOwnerChat && !isOwner ? ownerProfile.userAvatar : resolveChatUserAvatar(chat);
 
                     const roomId = chat.roomId || chat.room_id || getSupportRoomId(chat.userId || chat.id);
                     const lastSenderId = chat.lastSenderId || chat.last_sender_id || '';
@@ -576,7 +632,7 @@ const renderAdminChatsList = () => {
                 }).join('');
 
             const userRows = usersToStartChat.map(user => {
-                    const avatarUrl = user.userAvatar || 'https://cdn-icons-png.flaticon.com/512/3135/3135715.png';
+                    const avatarUrl = resolveChatUserAvatar(user);
                     return `
                     <button data-chat-userid="${user.userId}" data-chat-source="user-search" class="admin-chat-row w-full flex items-center gap-3 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800 rounded-2xl shadow-sm text-left hover:bg-blue-100 dark:hover:bg-blue-900/40 transition">
                         <img src="${escapeHtml(avatarUrl)}" alt="${escapeHtml(user.userName || 'User')}" class="h-12 w-12 rounded-full object-cover shrink-0">
@@ -640,8 +696,12 @@ const showAdminChatsPage = () => {
                 </div>
                 ${getPageFooter()}`;
             showPage(content);
-            setBottomNavActive('bottom-settings-btn');
             document.getElementById('admin-chat-search')?.addEventListener('input', renderAdminChatsList);
+
+            // Hydrate users cache instantly so avatars and user names exist immediately
+            if ((!allUsersCache || allUsersCache.length === 0) && typeof hydrateAdminUsersFromCache === 'function') {
+                hydrateAdminUsersFromCache();
+            }
 
             // Render instantly from local cache
             renderAdminChatsList();
@@ -655,6 +715,8 @@ const showAdminChatsPage = () => {
         };
 
 // Expose functions to window for global access
+window.resolveChatUserAvatar = resolveChatUserAvatar;
+window.fetchMissingChatAvatars = fetchMissingChatAvatars;
 window.updateAdminChatUnreadBadges = updateAdminChatUnreadBadges;
 window.calculateAdminChatUnreadCount = calculateAdminChatUnreadCount;
 window.refreshAdminChatUnreadCount = refreshAdminChatUnreadCount;

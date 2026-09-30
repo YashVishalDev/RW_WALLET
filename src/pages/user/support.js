@@ -950,14 +950,21 @@ const openSupportChatPage = async (chatUserId, viewerRole = 'user', chatMeta = {
                 : (isAdminView
                     ? (chatMeta.userEmail || '')
                     : (chatMeta.adminEmail || getSupportAdminEmail()));
-            let logo = 'https://cdn-icons-png.flaticon.com/512/3135/3135715.png';
+            let logo = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&h=150&q=80';
             if (isChatWithOwner) {
                 logo = chatMeta.adminLogo || getSupportLogo();
             } else if (isAdminView) {
                 const userProfile = (typeof allUsersCache !== 'undefined' && Array.isArray(allUsersCache)) 
                     ? allUsersCache.find(u => String(u.id || u.uid) === String(chatUserId)) 
                     : {};
-                logo = userProfile.profilePhoto || userProfile.profile_photo || userProfile.avatarUrl || userProfile.avatar_url || chatMeta.userAvatar || logo;
+                const customPic = userProfile.profilePhoto || userProfile.profile_photo || userProfile.avatarUrl || userProfile.avatar_url || chatMeta.userAvatar;
+                if (customPic && typeof customPic === 'string' && customPic.startsWith('http') && !customPic.includes('3135715.png')) {
+                    logo = customPic;
+                } else if (typeof window.getProfileAvatarUrl === 'function') {
+                    logo = window.getProfileAvatarUrl(userProfile.name ? userProfile : { uid: chatUserId, id: chatUserId, name: chatMeta.userName, email: chatMeta.userEmail });
+                } else if (typeof window.resolveChatUserAvatar === 'function') {
+                    logo = window.resolveChatUserAvatar({ userId: chatUserId, userName: chatMeta.userName, userEmail: chatMeta.userEmail });
+                }
             } else {
                 logo = chatMeta.adminLogo || getSupportLogo();
             }
