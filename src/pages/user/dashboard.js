@@ -99,49 +99,159 @@ const annotateTransactionsWithRemainingBalance = (items = [], currentBalance = 0
 const normalizeCloudTransaction = (item = {}) => normalizeTransactionForHistory(item);
 
 const getTransactionKey = (item = {}, index = 0) => {
-            const timestamp = timestampToMillis(item.timestamp || item.requestedAt || item.createdAt || item.processedAt) || Date.now();
-            const existingKey = String(item.key || '');
-            if (existingKey.startsWith('req-')) return existingKey;
-            const requestId = item.requestId || item.request_id;
-            const type = normalizeTransactionType(item);
-            if (requestId && (type === 'withdrawal' || type === 'mobile_recharge')) return `req-${requestId}`;
-            return String(item.transactionId || item.adminTransactionId || item.requestId || item.id || existingKey || `${item.type || 'tx'}-${timestamp}-${item.amount || 0}-${index}`);
-        };
+    const timestamp = timestampToMillis(item.timestamp || item.requestedAt || item.createdAt || item.processedAt) || Date.now();
+    const type = normalizeTransactionType(item);
+
+    // 1. Order ID for deposits
+    const orderId = item.orderId || item.order_id;
+    if (orderId) {
+        const cleanOrder = String(orderId).replace(/^dep_/, '');
+        return `dep_${cleanOrder}`;
+    }
+
+    // 2. Request ID for withdrawals / mobile recharge
+    const requestId = item.requestId || item.request_id;
+    if (requestId) {
+        const cleanReq = String(requestId).replace(/^req-/, '');
+        return `req-${cleanReq}`;
+    }
+
+    // 3. Existing key if prefixed
+    const existingKey = String(item.key || '');
+    if (existingKey.startsWith('dep_')) {
+        return `dep_${existingKey.replace(/^dep_/, '')}`;
+    }
+    if (existingKey.startsWith('req-')) {
+        return `req-${existingKey.replace(/^req-/, '')}`;
+    }
+
+    // 4. Raw ID prefixes
+    const rawId = String(item.id || '');
+    if (rawId.startsWith('dep_')) {
+        return `dep_${rawId.replace(/^dep_/, '')}`;
+    }
+    if (rawId.startsWith('req-')) {
+        return `req-${rawId.replace(/^req-/, '')}`;
+    }
+
+    // 5. Withdrawal type fallback with ID
+    if (type === 'withdrawal' && rawId) {
+        return `req-${rawId.replace(/^req-/, '')}`;
+    }
+
+    // 6. Transaction ID / adminTransactionId fallback
+    const txnId = item.transactionId || item.transaction_id || item.adminTransactionId || item.id || existingKey;
+    if (txnId) return String(txnId);
+
+    return `${type}-${timestamp}-${Math.abs(Number(item.amount || 0))}-${index}`;
+};
 
 const mergeTransactionsByKey = (...groups) => {
-            const merged = new Map();
-            const statusRank = (item = {}) => ['completed', 'rejected', 'failed'].includes(String(item.status || '').toLowerCase()) ? 2 : 1;
-            const getOriginalRequestTime = (...items) => {
-                const times = items
-                    .flat()
-                    .map(item => timestampToMillis(item?.requestedAt || item?.requested_at || item?.createdAt || item?.timestamp))
-                    .filter(time => Number.isFinite(time) && time > 0);
-                return times.length ? Math.min(...times) : null;
-            };
-            groups.flat().forEach((item, index) => {
-                if (!item) return;
-                const normalized = normalizeTransactionForHistory(item, index);
-                const key = getTransactionKey(normalized, index);
-                const existing = merged.get(key) || {};
-                let next = statusRank(normalized) >= statusRank(existing)
-                    ? { ...existing, ...normalized, key }
-                    : { ...normalized, ...existing, key };
-                const type = normalizeTransactionType(next);
-                if ((next.requestId || next.request_id) && (type === 'withdrawal' || type === 'mobile_recharge')) {
-                    const requestedAt = getOriginalRequestTime(existing, normalized, item);
-                    if (requestedAt) {
-                        next = {
-                            ...next,
-                            requestedAt,
-                            timestamp: requestedAt
-                        };
-                    }
-                }
-                merged.set(key, next);
-            });
-            return Array.from(merged.values())
-                .sort((a, b) => timestampToMillis(b.timestamp || b.requestedAt) - timestampToMillis(a.timestamp || a.requestedAt));
-        };
+    const merged = new Map();
+    const statusRank = (item = {}) => {
+        const s = String(item.status || '').toLowerCase();
+        if (s === 'completed' || s === 'approved') return 3;
+        if (s === 'rejected' || s === 'failed') return 2;
+        return 1;
+    };
+
+    const getOriginalRequestTime = (...items) => {
+        const times = items
+            .flat()
+            .map(item => timestampToMillis(item?.requestedAt || item?.requested_at || item?.createdAt || item?.timestamp))
+            .filter(time => Number.isFinite(time) && time > 0);
+        return times.length ? Math.min(...times) : null;
+    };
+
+    // First pass: group by canonical key
+    groups.flat().forEach((item, index) => {
+        if (!item) return;
+        const normalized = normalizeTransactionForHistory(item, index);
+        const key = getTransactionKey(normalized, index);
+        const existing = merged.get(key);
+        if (!existing) {
+            merged.set(key, { ...normalized, key });
+            return;
+        }
+
+        let next = statusRank(normalized) >= statusRank(existing)
+            ? { ...existing, ...normalized, key }
+            : { ...normalized, ...existing, key };
+
+        const type = normalizeTransactionType(next);
+        if ((next.requestId || next.request_id || key.startsWith('req-')) && (type === 'withdrawal' || type === 'mobile_recharge')) {
+            const requestedAt = getOriginalRequestTime(existing, normalized, item);
+            if (requestedAt) {
+                next.requestedAt = requestedAt;
+                next.timestamp = requestedAt;
+            }
+        }
+        merged.set(key, next);
+    });
+
+    // Second pass: deep deduplication for records referring to the same transaction
+    const allItems = Array.from(merged.values());
+    const finalItems = [];
+
+    const isSameTransaction = (a, b) => {
+        if (a === b) return true;
+
+        // Match orderId (e.g. UPI deposits)
+        const aOrder = String(a.orderId || a.order_id || '').replace(/^dep_/, '').trim();
+        const bOrder = String(b.orderId || b.order_id || '').replace(/^dep_/, '').trim();
+        if (aOrder && bOrder && aOrder.toLowerCase() === bOrder.toLowerCase()) return true;
+
+        // Match requestId (e.g. withdrawals or mobile recharges)
+        const aReq = String(a.requestId || a.request_id || a.id || '').replace(/^req-/, '').trim();
+        const bReq = String(b.requestId || b.request_id || b.id || '').replace(/^req-/, '').trim();
+        if (aReq && bReq && aReq === bReq && (a.type === 'withdrawal' || b.type === 'withdrawal' || a.type === 'mobile_recharge' || b.type === 'mobile_recharge')) return true;
+
+        // Match UTR if valid
+        const aUtr = String(a.utr || '').trim().toLowerCase();
+        const bUtr = String(b.utr || '').trim().toLowerCase();
+        if (aUtr && bUtr && aUtr !== 'n/a' && aUtr.length >= 6 && aUtr === bUtr) return true;
+
+        // Match transactionId / adminTransactionId
+        const aTxn = String(a.transactionId || a.transaction_id || a.adminTransactionId || '').trim();
+        const bTxn = String(b.transactionId || b.transaction_id || b.adminTransactionId || '').trim();
+        if (aTxn && bTxn && aTxn === bTxn && !aTxn.startsWith('TX-') && !aTxn.startsWith('tx-')) return true;
+
+        // Match identical type + amount + close timestamp
+        const aType = normalizeTransactionType(a);
+        const bType = normalizeTransactionType(b);
+        if (aType === bType && Math.abs(Number(a.amount || 0)) === Math.abs(Number(b.amount || 0))) {
+            const aTime = timestampToMillis(a.timestamp || a.requestedAt || a.createdAt);
+            const bTime = timestampToMillis(b.timestamp || b.requestedAt || b.createdAt);
+            if (aTime && bTime && Math.abs(aTime - bTime) <= 15000) {
+                return true;
+            }
+        }
+
+        return false;
+    };
+
+    for (const item of allItems) {
+        const existingIdx = finalItems.findIndex(existing => isSameTransaction(existing, item));
+        if (existingIdx >= 0) {
+            const existing = finalItems[existingIdx];
+            const mergedItem = statusRank(item) >= statusRank(existing)
+                ? { ...existing, ...item, key: existing.key || item.key }
+                : { ...item, ...existing, key: existing.key || item.key };
+
+            mergedItem.transactionId = item.transactionId || existing.transactionId;
+            mergedItem.adminTransactionId = item.adminTransactionId || existing.adminTransactionId;
+            mergedItem.orderId = item.orderId || existing.orderId;
+            mergedItem.requestId = item.requestId || existing.requestId;
+            mergedItem.utr = item.utr || existing.utr;
+
+            finalItems[existingIdx] = mergedItem;
+        } else {
+            finalItems.push(item);
+        }
+    }
+
+    return finalItems.sort((a, b) => timestampToMillis(b.timestamp || b.requestedAt) - timestampToMillis(a.timestamp || a.requestedAt));
+};
 
 const normalizePendingRequestForHistory = (request = {}) => {
             const requestType = request.type || 'withdrawal';
@@ -8120,6 +8230,44 @@ let famPayDepositPollTimer = null;
 let famPayDepositCountdownTimer = null;
 const processedDepositOrders = new Set();
 
+const updateDepositSummary = () => {
+    const amountInput = document.getElementById('deposit-amount-input');
+    const summaryBox = document.getElementById('deposit-summary-box');
+    if (!summaryBox) return;
+
+    const amount = parseFloat(amountInput?.value || 0);
+    if (isNaN(amount) || amount <= 0) {
+        summaryBox.innerHTML = `
+            <div class="flex justify-between text-gray-500 dark:text-gray-400">
+                <span>Enter an amount of ₹10 or more to see payment breakdown.</span>
+            </div>`;
+        return;
+    }
+
+    const taxAmount = Math.ceil(amount / 100) * 5;
+    const totalPayable = (amount + taxAmount).toFixed(2);
+
+    summaryBox.innerHTML = `
+        <div class="space-y-1.5 text-xs">
+            <div class="flex justify-between items-center text-gray-600 dark:text-gray-300">
+                <span>Deposit Amount</span>
+                <span class="font-bold text-gray-900 dark:text-white">₹${amount.toFixed(2)}</span>
+            </div>
+            <div class="flex justify-between items-center text-gray-500 dark:text-gray-400">
+                <span>Processing Fee / Gateway Charge (5%)</span>
+                <span class="font-semibold text-gray-700 dark:text-gray-300">+₹${taxAmount.toFixed(2)}</span>
+            </div>
+            <div class="pt-2 border-t border-gray-200 dark:border-gray-700 flex justify-between items-center text-sm font-black">
+                <span class="text-gray-800 dark:text-gray-100">Total Payable</span>
+                <span class="text-emerald-600 dark:text-emerald-400 text-base">₹${totalPayable}</span>
+            </div>
+            <div class="flex justify-between items-center text-[11px] text-emerald-700 dark:text-emerald-300 font-bold bg-emerald-50 dark:bg-emerald-950/40 p-2 rounded-lg mt-1 border border-emerald-200 dark:border-emerald-800/50">
+                <span>Wallet Credit Amount</span>
+                <span>₹${amount.toFixed(2)} (100% credited)</span>
+            </div>
+        </div>`;
+};
+
 const showDepositMoneyPage = () => {
     if (!currentUserData) return showNotification('User data not loaded. Please wait.', true);
     if (currentUserData.isFlagged) {
@@ -8171,6 +8319,17 @@ const showDepositMoneyPage = () => {
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
                 </button>
             </div>
+
+            <!-- Recent Deposits / Verification Status List -->
+            <div class="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow-md border border-gray-100 dark:border-gray-700/60 space-y-3">
+                <div class="flex items-center justify-between">
+                    <h4 class="text-xs font-black uppercase text-gray-400 dark:text-gray-500 tracking-wider">Recent UPI Deposits</h4>
+                    <button onclick="loadUserRecentDepositsList()" class="text-xs font-bold text-emerald-600 hover:text-emerald-700 dark:text-emerald-400">🔄 Refresh</button>
+                </div>
+                <div id="user-recent-deposits-list" class="space-y-2 max-h-72 overflow-y-auto">
+                    <p class="text-center text-gray-400 py-3 text-xs">Loading deposits...</p>
+                </div>
+            </div>
         </div>
         ${getPageFooter()}`;
     showPage(content);
@@ -8193,6 +8352,8 @@ const showDepositMoneyPage = () => {
     if (proceedBtn) {
         proceedBtn.onclick = handleGenerateDepositQR;
     }
+
+    loadUserRecentDepositsList();
 };
 
 const loadUserRecentDepositsList = async () => {
@@ -8272,6 +8433,20 @@ const loadUserRecentDepositsList = async () => {
     }
 };
 
+const markDepositFailed = async ({ orderId, reason }) => {
+    if (!orderId) return;
+    try {
+        const depositRef = doc(db, `artifacts/${appId}/public/data/deposits`, orderId);
+        await updateDoc(depositRef, {
+            status: 'failed',
+            failureReason: reason || 'Expired',
+            updatedAt: serverTimestamp()
+        }).catch(() => null);
+    } catch (e) {
+        console.warn('Mark deposit failed error:', e);
+    }
+};
+
 const handleReverifyDeposit = async (orderId, amount, taxAmount) => {
     if (!orderId) return;
 
@@ -8297,7 +8472,21 @@ const handleReverifyDeposit = async (orderId, amount, taxAmount) => {
             loadUserRecentDepositsList();
         } else {
             hideLoading();
-            showNotification('Payment not detected automatically yet. Please ensure payment completed in your UPI app.', true);
+            const manualUtr = prompt('Automatic detection did not find the payment yet. If you have already paid, enter your 12-digit UPI UTR / Reference number to submit for verification:');
+            if (manualUtr && manualUtr.trim().length >= 6) {
+                showLoading(true);
+                const depositRef = doc(db, `artifacts/${appId}/public/data/deposits`, orderId);
+                await updateDoc(depositRef, {
+                    utr: manualUtr.trim(),
+                    status: 'pending_admin_approval',
+                    submittedAt: serverTimestamp()
+                }).catch(() => null);
+                hideLoading();
+                showNotification('✅ UTR submitted! Admin will verify and credit your wallet shortly.');
+                loadUserRecentDepositsList();
+            } else {
+                showNotification('Payment not detected automatically yet. Please ensure payment completed in your UPI app.', true);
+            }
         }
     } catch (e) {
         hideLoading();
@@ -8323,51 +8512,66 @@ const handleGenerateDepositQR = async () => {
     const apiKey = appConfigCache?.fampay_api_key || 'FAM_fbc1b443110a37b5f2f1de5bef365c90defb23c1a38d19c0';
 
     showLoading();
+    let orderId = '';
+    let qrUrl = '';
+
     try {
-        const response = await fetch(`https://anujbots.xyz/api/qr.php?upi=${encodeURIComponent(upiId)}`);
-        const res = await response.json();
-        hideLoading();
+        const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        const timer = controller ? setTimeout(() => controller.abort(), 3500) : null;
+        const response = await fetch(`https://anujbots.xyz/api/qr.php?upi=${encodeURIComponent(upiId)}`, {
+            signal: controller?.signal
+        }).catch(() => null);
+        if (timer) clearTimeout(timer);
 
-        if (res && (res.status === 'success' || res.data?.order_id)) {
-            const orderId = res.data.order_id;
-            const qrUrl = res.data.qr_url || `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(`upi://pay?pa=${upiId}&pn=RWWallet&am=${totalPayable}&tn=${orderId}&cu=INR`)}`;
-            
-            try {
-                const depositRef = doc(db, `artifacts/${appId}/public/data/deposits`, orderId);
-                await setDoc(depositRef, {
-                    id: orderId,
-                    orderId,
-                    userId: currentUser?.uid || 'N/A',
-                    userName: currentUserData?.name || 'N/A',
-                    userEmail: currentUserData?.email || 'N/A',
-                    userMobile: currentUserData?.mobile || 'N/A',
-                    amount: Number(depositAmount),
-                    taxAmount: Number(taxAmount),
-                    totalPayable: parseFloat(totalPayable),
-                    status: 'pending',
-                    createdAt: serverTimestamp()
-                }, { merge: true });
-            } catch (e) {
-                console.warn('Initiated deposit record error:', e);
+        if (response && response.ok) {
+            const res = await response.json().catch(() => null);
+            if (res && (res.status === 'success' || res.data?.order_id)) {
+                orderId = res.data.order_id;
+                qrUrl = res.data.qr_url;
             }
-
-            showFamPayPaymentModal({
-                orderId,
-                qrUrl,
-                depositAmount,
-                taxAmount,
-                totalPayable,
-                upiId,
-                apiKey
-            });
-        } else {
-            showNotification('Failed to generate UPI QR. Please try again.', true);
         }
-    } catch (err) {
-        hideLoading();
-        console.error('FamPay QR Error:', err);
-        showNotification('Network error while generating UPI QR code.', true);
+    } catch (e) {
+        console.warn('External QR generation failed, falling back to standard UPI QR:', e);
     }
+
+    if (!orderId) {
+        orderId = `DEP_${Date.now()}_${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
+    }
+    if (!qrUrl) {
+        const upiUri = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=RWWallet&am=${totalPayable}&tr=${encodeURIComponent(orderId)}&cu=INR`;
+        qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(upiUri)}`;
+    }
+
+    try {
+        const depositRef = doc(db, `artifacts/${appId}/public/data/deposits`, orderId);
+        await setDoc(depositRef, {
+            id: orderId,
+            orderId,
+            userId: currentUser?.uid || 'N/A',
+            userName: currentUserData?.name || 'N/A',
+            userEmail: currentUserData?.email || 'N/A',
+            userMobile: currentUserData?.mobile || 'N/A',
+            amount: Number(depositAmount),
+            taxAmount: Number(taxAmount),
+            totalPayable: parseFloat(totalPayable),
+            status: 'pending',
+            createdAt: serverTimestamp()
+        }, { merge: true });
+    } catch (e) {
+        console.warn('Initiated deposit record error:', e);
+    }
+
+    hideLoading();
+
+    showFamPayPaymentModal({
+        orderId,
+        qrUrl,
+        depositAmount,
+        taxAmount,
+        totalPayable,
+        upiId,
+        apiKey
+    });
 };
 
 const showFamPayPaymentModal = ({ orderId, qrUrl, depositAmount, taxAmount, totalPayable, upiId, apiKey }) => {
@@ -8383,11 +8587,11 @@ const showFamPayPaymentModal = ({ orderId, qrUrl, depositAmount, taxAmount, tota
     const upiDeepLink = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=RWWallet&am=${totalPayable}&tr=${encodeURIComponent(orderId)}&cu=INR`;
 
     renderModal('UPI Payment',
-        `<div class="space-y-4 text-center py-1">
+        `<div class="space-y-3.5 text-center py-1">
             <!-- QR Code Card -->
-            <div class="flex flex-col items-center justify-center p-3 bg-white rounded-2xl shadow-sm border border-gray-200 max-w-[210px] mx-auto">
+            <div class="flex flex-col items-center justify-center p-3 bg-white dark:bg-white rounded-2xl shadow-sm border border-gray-200 max-w-[210px] mx-auto">
                 <img src="${escapeHtml(qrUrl)}" alt="Scan & Pay QR" class="w-44 h-44 object-contain rounded-lg">
-                <p class="text-[11px] text-gray-500 font-bold mt-1.5">Scan QR with any UPI App</p>
+                <p class="text-[11px] text-gray-600 font-bold mt-1.5">Scan QR with any UPI App</p>
             </div>
 
             <!-- Countdown Timer right under QR -->
@@ -8398,24 +8602,41 @@ const showFamPayPaymentModal = ({ orderId, qrUrl, depositAmount, taxAmount, tota
             </div>
 
             <!-- Big Payable Amount -->
-            <div class="bg-gray-50 dark:bg-gray-750 border border-gray-200 dark:border-gray-700 rounded-2xl p-3">
+            <div class="bg-gray-50 dark:bg-gray-750 border border-gray-200 dark:border-gray-700 rounded-2xl p-2.5">
                 <span class="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Total Payable Amount</span>
-                <span class="text-3xl font-black text-emerald-600 dark:text-emerald-400">₹${totalPayable}</span>
+                <span class="text-2xl font-black text-emerald-600 dark:text-emerald-400">₹${totalPayable}</span>
             </div>
 
             <!-- Direct Pay via UPI App Deep-link Button -->
-            <a href="${upiDeepLink}" class="w-full py-3.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold rounded-xl text-sm shadow-md transition flex items-center justify-center gap-2">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
+            <a href="${upiDeepLink}" class="w-full py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold rounded-xl text-xs shadow-md transition flex items-center justify-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
                 <span>Open UPI App / Pay Now</span>
             </a>
 
             <!-- Auto-Verifier Status Badge -->
-            <div id="fampay-verify-status" class="text-xs text-center font-bold text-emerald-600 dark:text-emerald-400 flex items-center justify-center gap-2 pt-1">
-                <div class="w-3.5 h-3.5 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin"></div>
+            <div id="fampay-verify-status" class="text-xs text-center font-bold text-emerald-600 dark:text-emerald-400 flex items-center justify-center gap-2 pt-0.5">
+                <div class="w-3 h-3 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin"></div>
                 <span>Auto Verifying Payment...</span>
             </div>
+
+            <!-- Manual UTR Fallback Input Section -->
+            <div class="mt-2 pt-2.5 border-t border-gray-200 dark:border-gray-700 text-left space-y-1.5">
+                <div class="flex items-center justify-between">
+                    <label for="manual-deposit-utr-input" class="text-[11px] font-bold text-gray-700 dark:text-gray-300">
+                        Paid? Enter 12-Digit UPI UTR:
+                    </label>
+                    <span class="text-[10px] font-mono font-bold text-emerald-600 dark:text-emerald-400">Instant Verification</span>
+                </div>
+                <div class="flex gap-1.5">
+                    <input type="text" id="manual-deposit-utr-input" placeholder="e.g. 428190283741" maxlength="24" class="w-full px-3 py-2 text-xs font-mono bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 text-gray-900 dark:text-white">
+                    <button type="button" id="submit-manual-utr-btn" class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shrink-0 transition shadow-sm">
+                        Submit UTR
+                    </button>
+                </div>
+                <p class="text-[9px] text-gray-400 dark:text-gray-500">If your UPI payment isn't detected automatically within seconds, enter your 12-digit UTR above.</p>
+            </div>
         </div>`,
-        `<button id="cancel-deposit-modal-btn" onclick="window.closeModal()" class="w-full py-2.5 text-xs font-bold bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-gray-200 rounded-xl">Cancel</button>`,
+        `<button id="cancel-deposit-modal-btn" onclick="window.closeModal()" class="w-full py-2.5 text-xs font-bold bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-gray-200 rounded-xl">Close</button>`,
         'max-w-sm'
     );
 
@@ -8486,6 +8707,42 @@ const showFamPayPaymentModal = ({ orderId, qrUrl, depositAmount, taxAmount, tota
 
     famPayDepositPollTimer = setInterval(checkVerification, 2500);
     checkVerification();
+
+    document.getElementById('submit-manual-utr-btn')?.addEventListener('click', async () => {
+        const utrInput = document.getElementById('manual-deposit-utr-input');
+        const utrVal = utrInput?.value?.trim();
+        if (!utrVal || utrVal.length < 6) {
+            return showNotification('Please enter a valid 12-digit UPI UTR number.', true);
+        }
+
+        showLoading(true);
+        try {
+            const depositRef = doc(db, `artifacts/${appId}/public/data/deposits`, orderId);
+            await updateDoc(depositRef, {
+                utr: utrVal,
+                status: 'pending_admin_approval',
+                submittedAt: serverTimestamp()
+            }).catch(() => null);
+
+            if (famPayDepositPollTimer) {
+                clearInterval(famPayDepositPollTimer);
+                famPayDepositPollTimer = null;
+            }
+            if (famPayDepositCountdownTimer) {
+                clearInterval(famPayDepositCountdownTimer);
+                famPayDepositCountdownTimer = null;
+            }
+
+            hideLoading();
+            window.closeModal();
+            showNotification('✅ UTR submitted! Admin will verify and credit your wallet shortly.');
+            loadUserRecentDepositsList();
+        } catch (err) {
+            hideLoading();
+            console.error('Submit manual UTR error:', err);
+            showNotification('Failed to submit UTR. Please try again.', true);
+        }
+    });
 
     document.getElementById('cancel-deposit-modal-btn')?.addEventListener('click', () => {
         if (famPayDepositPollTimer) clearInterval(famPayDepositPollTimer);

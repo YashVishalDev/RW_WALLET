@@ -2,6 +2,46 @@
 
 let adminFundRequestsRealtimeStarted = false;
 
+const getAdminFundRequestsCacheKey = () => {
+    const uid = currentUser?.uid || getCachedSessionUserId() || 'admin';
+    return `rw_admin_fund_requests_cache_${uid}`;
+};
+
+const saveAdminFundRequestsToCache = () => {
+    try {
+        const cacheKey = getAdminFundRequestsCacheKey();
+        const serializable = (allFundRequestsCache || []).slice(0, 200).map(req => {
+            const obj = { ...req };
+            // Convert Firestore timestamps to millis for safe JSON serialization
+            ['requestedAt', 'processedAt', 'createdAt', 'updatedAt', 'timestamp'].forEach(field => {
+                if (obj[field]?.toMillis) obj[field] = obj[field].toMillis();
+                else if (obj[field]?.seconds) obj[field] = obj[field].seconds * 1000;
+            });
+            return obj;
+        });
+        writeJsonCache(cacheKey, { items: serializable, savedAt: Date.now() });
+    } catch (e) {
+        console.warn('Save admin fund requests cache error:', e);
+    }
+};
+
+const hydrateAdminFundRequestsFromCache = () => {
+    try {
+        const cacheKey = getAdminFundRequestsCacheKey();
+        const cached = readJsonCache(cacheKey);
+        if (!cached || !Array.isArray(cached.items) || cached.items.length === 0) return false;
+        // Only use cache if less than 10 minutes old
+        if (cached.savedAt && Date.now() - cached.savedAt > 10 * 60 * 1000) return false;
+        allFundRequestsCache = cached.items.filter(req => (req.type || 'withdrawal') === 'withdrawal' && (!req.status || req.status === 'pending') && !isFundRequestLocallyProcessed(req));
+        allRechargeRequestsCache = cached.items.filter(req => req.type === 'mobile_recharge' && (!req.status || req.status === 'pending') && !isFundRequestLocallyProcessed(req));
+        updateAdminPendingRequestSummary();
+        return true;
+    } catch (e) {
+        console.warn('Hydrate admin fund requests from cache error:', e);
+        return false;
+    }
+};
+
 const setupAdminRealtimeFundRequestsListener = () => {
     const isCurrentAdmin = currentUser?.uid === ADMIN_UID || currentUserData?.role === 'admin' || currentUserData?.role === 'owner';
     if (!isCurrentAdmin || adminFundRequestsRealtimeStarted) return;
@@ -20,6 +60,7 @@ const setupAdminRealtimeFundRequestsListener = () => {
             allRechargeRequestsCache = merged.filter(req => req.type === 'mobile_recharge' && (!req.status || req.status === 'pending') && !isFundRequestLocallyProcessed(req));
 
             updateAdminPendingRequestSummary();
+            saveAdminFundRequestsToCache();
 
             if (document.getElementById('admin-fund-requests-list-page')) {
                 renderAdminFundRequests(allFundRequestsCache);
@@ -55,6 +96,7 @@ const refreshAdminFundRequestsFromCloud = async () => {
                 allFundRequestsCache = allRequests.filter(req => (req.type || 'withdrawal') === 'withdrawal' && !isFundRequestLocallyProcessed(req));
                 allRechargeRequestsCache = allRequests.filter(req => req.type === 'mobile_recharge' && !isFundRequestLocallyProcessed(req));
                 updateAdminPendingRequestSummary();
+                saveAdminFundRequestsToCache();
                 if (document.getElementById('admin-fund-requests-list-page')) renderAdminFundRequests(allFundRequestsCache);
                 if (document.getElementById('admin-recharge-requests-list-page')) renderAdminRechargeRequests(allRechargeRequestsCache);
             } catch (error) {
@@ -78,6 +120,7 @@ const importFirebaseFundRequestsForAdmin = async () => {
             allFundRequestsCache = allRequests.filter(req => req.status === 'pending' && (req.type || 'withdrawal') === 'withdrawal');
             allRechargeRequestsCache = allRequests.filter(req => req.status === 'pending' && req.type === 'mobile_recharge');
             updateAdminPendingRequestSummary();
+            saveAdminFundRequestsToCache();
             if (document.getElementById('admin-fund-requests-list-page')) renderAdminFundRequests(allFundRequestsCache);
             if (document.getElementById('admin-recharge-requests-list-page')) renderAdminRechargeRequests(allRechargeRequestsCache);
         };
@@ -1591,6 +1634,8 @@ const openAdminQuickAction = (handler) => {
 // Expose functions to window for global access
 window.refreshAdminFundRequestsFromCloud = refreshAdminFundRequestsFromCloud;
 window.importFirebaseFundRequestsForAdmin = importFirebaseFundRequestsForAdmin;
+window.saveAdminFundRequestsToCache = saveAdminFundRequestsToCache;
+window.hydrateAdminFundRequestsFromCache = hydrateAdminFundRequestsFromCache;
 window.readAdminDashboardMetricsCache = readAdminDashboardMetricsCache;
 window.rememberAdminDashboardMetrics = rememberAdminDashboardMetrics;
 window.applyAdminDashboardMetrics = applyAdminDashboardMetrics;

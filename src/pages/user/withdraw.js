@@ -425,8 +425,8 @@ const showWithdrawalInvoiceDetails = (invoiceKey) => {
                         <div class="grid grid-cols-2 gap-2.5">
                             <!-- Review Tasks -->
                             <div class="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-750 p-3 rounded-2xl text-center space-y-1.5 shadow-sm">
-                                <div class="flex justify-center text-indigo-650 dark:text-indigo-400">
-                                    <div class="flex h-11 w-11 items-center justify-center rounded-full bg-indigo-50 dark:bg-indigo-950/40 text-indigo-650 dark:text-indigo-400 border border-indigo-100/60 dark:border-indigo-900/50 shadow-sm">
+                                <div class="flex justify-center text-indigo-600 dark:text-indigo-400">
+                                    <div class="flex h-11 w-11 items-center justify-center rounded-full bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 border border-indigo-100/60 dark:border-indigo-900/50 shadow-sm">
                                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-6.5 h-6.5">
                                             <path fill-rule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12Zm13.36-1.814a.75.75 0 1 0-1.22-.872l-3.236 4.53L9.53 12.22a.75.75 0 0 0-1.06 1.06l2.25 2.25a.75.75 0 0 0 1.14-.094l3.748-5.25Z" clip-rule="evenodd" />
                                         </svg>
@@ -439,8 +439,8 @@ const showWithdrawalInvoiceDetails = (invoiceKey) => {
 
                             <!-- Other Tasks -->
                             <div class="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-750 p-3 rounded-2xl text-center space-y-1.5 shadow-sm">
-                                <div class="flex justify-center text-indigo-650 dark:text-indigo-400">
-                                    <div class="flex h-11 w-11 items-center justify-center rounded-full bg-indigo-50 dark:bg-indigo-950/40 text-indigo-650 dark:text-indigo-400 border border-indigo-100/60 dark:border-indigo-900/50 shadow-sm">
+                                <div class="flex justify-center text-indigo-600 dark:text-indigo-400">
+                                    <div class="flex h-11 w-11 items-center justify-center rounded-full bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 border border-indigo-100/60 dark:border-indigo-900/50 shadow-sm">
                                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-6.5 h-6.5">
                                             <path fill-rule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25ZM12.75 9a.75.75 0 0 0-1.5 0v2.25H9a.75.75 0 0 0 0 1.5h2.25V15a.75.75 0 0 0 1.5 0v-2.25H15a.75.75 0 0 0 0-1.5h-2.25V9Z" clip-rule="evenodd" />
                                         </svg>
@@ -457,18 +457,18 @@ const showWithdrawalInvoiceDetails = (invoiceKey) => {
                     <div class="space-y-3 pt-2">
                         <h4 class="text-xs font-black uppercase text-gray-400 dark:text-gray-500 tracking-wider px-1">Actions</h4>
                         <div class="space-y-2.5">
-                            <button type="button" id="download-invoice-pdf-btn" class="w-full rounded-xl bg-indigo-650 hover:bg-indigo-700 active:scale-[0.98] py-2.5 text-white text-xs font-bold flex items-center justify-center gap-2 transition" style="outline: none;">
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-4 h-4">
+                            <button type="button" id="download-invoice-pdf-btn" class="w-full rounded-xl bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] py-3 text-white text-xs font-bold flex items-center justify-center gap-2 transition shadow-md shadow-indigo-600/30" style="background-color: #4f46e5 !important; color: #ffffff !important; outline: none;">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-4 h-4 text-white">
                                     <path fill-rule="evenodd" d="M12 2.25a.75.75 0 0 1 .75.75v11.59l3.97-3.97a.75.75 0 1 1 1.06 1.06l-5.25 5.25a.75.75 0 0 1-1.06 0l-5.25-5.25a.75.75 0 1 1 1.06-1.06l3.97 3.97V3a.75.75 0 0 1 .75-.75ZM3.75 19.5a.75.75 0 0 0 0 1.5h16.5a.75.75 0 0 0 0-1.5H3.75Z" clip-rule="evenodd" />
                                 </svg>
-                                Download PDF
+                                <span class="text-white font-bold">Download PDF</span>
                             </button>
-                            <button type="button" id="view-invoice-preview-btn" class="w-full rounded-xl border border-indigo-600 hover:bg-indigo-50/40 dark:hover:bg-indigo-900/10 active:scale-[0.98] py-2.5 text-indigo-650 dark:text-indigo-400 text-xs font-bold flex items-center justify-center gap-2 transition" style="outline: none;">
+                            <button type="button" id="view-invoice-preview-btn" class="w-full rounded-xl border-2 border-indigo-600 bg-indigo-50/60 dark:bg-indigo-950/30 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 active:scale-[0.98] py-2.5 text-indigo-700 dark:text-indigo-300 text-xs font-bold flex items-center justify-center gap-2 transition shadow-xs" style="outline: none;">
                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-4 h-4 text-indigo-600 dark:text-indigo-400">
                                     <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
                                     <path fill-rule="evenodd" d="M1.323 11.447C2.811 6.976 7.028 3.75 12.001 3.75c4.97 0 9.185 3.223 10.675 7.69.12.362.12.752 0 1.113-1.487 4.471-5.705 7.697-10.677 7.697-4.97 0-9.186-3.223-10.675-7.69a1.762 1.762 0 0 1 0-1.113ZM17.25 12a5.25 5.25 0 1 1-10.5 0 5.25 5.25 0 0 1 10.5 0Z" clip-rule="evenodd" />
                                 </svg>
-                                View Invoice Preview
+                                <span>View Invoice Preview</span>
                             </button>
                         </div>
                     </div>
@@ -529,13 +529,13 @@ const showInvoicePreviewPage = (inv) => {
         const prevBtn = document.getElementById('preview-prev-btn');
         if (prevBtn) {
             prevBtn.disabled = pageIdx === 0;
-            prevBtn.className = `flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-gray-250 dark:border-gray-700 transition active:scale-90 ${pageIdx === 0 ? 'opacity-40 cursor-not-allowed' : 'hover:bg-gray-100 dark:hover:bg-gray-800 text-indigo-650'}`;
+            prevBtn.className = `flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-gray-200 dark:border-gray-700 transition active:scale-90 ${pageIdx === 0 ? 'opacity-40 cursor-not-allowed' : 'hover:bg-gray-100 dark:hover:bg-gray-800 text-indigo-600'}`;
         }
 
         const nextBtn = document.getElementById('preview-next-btn');
         if (nextBtn) {
             nextBtn.disabled = isLastPage;
-            nextBtn.className = `flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-gray-255 dark:border-gray-700 transition active:scale-90 ${isLastPage ? 'opacity-40 cursor-not-allowed' : 'hover:bg-gray-100 dark:hover:bg-gray-800 text-indigo-650'}`;
+            nextBtn.className = `flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-gray-200 dark:border-gray-700 transition active:scale-90 ${isLastPage ? 'opacity-40 cursor-not-allowed' : 'hover:bg-gray-100 dark:hover:bg-gray-800 text-indigo-600'}`;
         }
     };
 
@@ -589,7 +589,7 @@ const showInvoicePreviewPage = (inv) => {
 
                         <!-- User Details Card -->
                         <div class="overflow-hidden rounded-xl border border-gray-150 dark:border-gray-800 bg-gray-50/40 dark:bg-gray-900/10">
-                            <div class="bg-indigo-650 text-white px-3 py-1.5 text-[10px] font-black uppercase tracking-wider">
+                            <div class="bg-indigo-600 text-white px-3 py-1.5 text-[10px] font-black uppercase tracking-wider">
                                 User Details
                             </div>
                             <div class="p-3.5 grid grid-cols-2 gap-4 text-[10px]">
@@ -626,7 +626,7 @@ const showInvoicePreviewPage = (inv) => {
 
                         <!-- Earnings Table Container -->
                         <div class="overflow-hidden rounded-xl border border-gray-150 dark:border-gray-800 bg-white dark:bg-slate-900">
-                            <div class="bg-indigo-650 text-white px-3 py-1.5 text-[10px] font-black uppercase tracking-wider">
+                            <div class="bg-indigo-600 text-white px-3 py-1.5 text-[10px] font-black uppercase tracking-wider">
                                 Earnings Report (Task-wise)
                             </div>
                             <div class="overflow-x-auto">
@@ -651,13 +651,13 @@ const showInvoicePreviewPage = (inv) => {
                         <!-- Pagination row -->
                         <div class="flex items-center justify-center gap-4 pt-2">
                             <button type="button" id="preview-prev-btn" class="flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 dark:border-gray-700 transition active:scale-90 hover:bg-gray-100 dark:hover:bg-gray-800" style="outline: none;">
-                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-4 h-4 text-gray-650 dark:text-gray-400">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-4 h-4 text-gray-600 dark:text-gray-400">
                                   <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
                                 </svg>
                             </button>
-                            <span id="preview-page-indicator" class="h-9 w-9 shrink-0 flex items-center justify-center rounded-full bg-indigo-650 text-white text-[10px] font-black shadow-sm select-none">1/3</span>
+                            <span id="preview-page-indicator" class="h-9 w-9 shrink-0 flex items-center justify-center rounded-full bg-indigo-600 text-white text-[10px] font-black shadow-sm select-none">1/3</span>
                             <button type="button" id="preview-next-btn" class="flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 dark:border-gray-700 transition active:scale-90 hover:bg-gray-100 dark:hover:bg-gray-800" style="outline: none;">
-                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-4 h-4 text-gray-650 dark:text-gray-400">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-4 h-4 text-gray-600 dark:text-gray-400">
                                   <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
                                 </svg>
                             </button>
@@ -666,11 +666,11 @@ const showInvoicePreviewPage = (inv) => {
                     </div>
                     
                     <!-- Actions inside Preview -->
-                    <button type="button" id="preview-download-pdf-btn" class="w-full rounded-xl bg-indigo-650 hover:bg-indigo-700 active:scale-[0.98] py-2.5 text-white text-xs font-bold flex items-center justify-center gap-2 transition" style="outline: none;">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-4 h-4">
+                    <button type="button" id="preview-download-pdf-btn" class="w-full rounded-xl bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] py-3 text-white text-xs font-bold flex items-center justify-center gap-2 transition shadow-md shadow-indigo-600/30" style="background-color: #4f46e5 !important; color: #ffffff !important; outline: none;">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-4 h-4 text-white">
                             <path fill-rule="evenodd" d="M12 2.25a.75.75 0 0 1 .75.75v11.59l3.97-3.97a.75.75 0 1 1 1.06 1.06l-5.25 5.25a.75.75 0 0 1-1.06 0l-5.25-5.25a.75.75 0 1 1 1.06-1.06l3.97 3.97V3a.75.75 0 0 1 .75-.75ZM3.75 19.5a.75.75 0 0 0 0 1.5h16.5a.75.75 0 0 0 0-1.5H3.75Z" clip-rule="evenodd" />
                         </svg>
-                        Download PDF
+                        <span class="text-white font-bold">Download PDF</span>
                     </button>
                 </div>
                 ${getPageFooter()}`;

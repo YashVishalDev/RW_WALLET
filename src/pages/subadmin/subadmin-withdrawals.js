@@ -118,6 +118,9 @@ const showAdminWithdrawalsPage = () => {
 
     document.getElementById('fix-legacy-pending-withdrawals-btn')?.addEventListener('click', handleFixLegacyPendingWithdrawals);
     document.getElementById('refresh-pending-withdrawals-btn')?.addEventListener('click', () => refreshAdminFundRequestsFromCloud());
+    if ((!allFundRequestsCache || allFundRequestsCache.length === 0) && typeof hydrateAdminFundRequestsFromCache === 'function') {
+        hydrateAdminFundRequestsFromCache();
+    }
     renderAdminFundRequests(allFundRequestsCache);
     updateLegacyWithdrawalFixSummary();
     refreshAdminFundRequestsFromCloud();

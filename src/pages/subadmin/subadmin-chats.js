@@ -88,14 +88,17 @@ const subscribeAdminChatRooms = async (chats = allSupportChatsCache) => {
                 const existingIndex = allSupportChatsCache.findIndex(chat => (chat.roomId || getSupportRoomId(chat.userId || chat.id)) === normalized.roomId);
                 const existing = existingIndex >= 0 ? allSupportChatsCache[existingIndex] : {};
                 const userProfile = allUsersCache.find(user => (user.id || user.uid) === userId) || {};
+                const chatName = existing.userName || userProfile.name || 'User';
+                const chatEmail = existing.userEmail || userProfile.email || '';
                 const updatedChat = {
                     ...existing,
                     id: existing.id || userId,
                     userId: existing.userId || userId,
                     roomId: normalized.roomId,
-                    userName: existing.userName || userProfile.name || 'User',
-                    userEmail: existing.userEmail || userProfile.email || '',
+                    userName: chatName,
+                    userEmail: chatEmail,
                     userMobile: existing.userMobile || getUserMobileValue(userProfile) || '',
+                    userAvatar: resolveChatUserAvatar({ userId, userName: chatName, userEmail: chatEmail, userAvatar: existing.userAvatar || userProfile.profilePhoto || userProfile.avatarUrl }),
                     lastMessage: normalized.text,
                     lastSenderId: normalized.senderId,
                     updatedAt: timestampToMillis(normalized.createdAt) || Date.now()
@@ -201,6 +204,117 @@ const populateFallbackAdminChatsFromUsers = () => {
     }
 };
 
+const missingChatAvatarsQueue = new Set();
+let isFetchingMissingChatAvatars = false;
+
+const resolveChatUserAvatar = (chat = {}) => {
+    const userId = chat.userId || chat.id || chat.uid || '';
+    const isOwnerChat = userId === ADMIN_UID || chat.id === ADMIN_UID || (chat.roomId && chat.roomId.includes(ADMIN_UID));
+    if (isOwnerChat) {
+        return getOwnerProfile()?.userAvatar || RW_LOGO_URL;
+    }
+
+    // 1. Direct explicit avatar if valid
+    const explicit = chat.userAvatar || chat.avatarUrl || chat.avatar_url || chat.profilePhoto || chat.profile_photo;
+    if (explicit && typeof explicit === 'string' && explicit.startsWith('http') && !explicit.includes('flaticon.com/512/3135/3135715.png')) {
+        return explicit;
+    }
+
+    // 2. Look in allUsersCache
+    const userDoc = (typeof allUsersCache !== 'undefined' && Array.isArray(allUsersCache))
+        ? allUsersCache.find(u => String(u.id || u.uid) === String(userId) || (chat.userEmail && u.email === chat.userEmail))
+        : null;
+
+    if (userDoc) {
+        const docPic = userDoc.profilePhoto || userDoc.profile_photo || userDoc.avatarUrl || userDoc.avatar_url || userDoc.photoURL;
+        if (docPic && typeof docPic === 'string' && docPic.startsWith('http') && !docPic.includes('flaticon.com/512/3135/3135715.png')) {
+            return docPic;
+        }
+        if (typeof getProfileAvatarUrl === 'function') {
+            const url = getProfileAvatarUrl(userDoc);
+            if (url) return url;
+        }
+    }
+
+    // 3. Look in localStorage cached user doc
+    if (typeof readJsonCache === 'function') {
+        const cachedUser = readJsonCache(`rw_wallet_user_cache_${userId}`);
+        if (cachedUser) {
+            const cachedPic = cachedUser.profilePhoto || cachedUser.profile_photo || cachedUser.avatarUrl || cachedUser.avatar_url;
+            if (cachedPic && typeof cachedPic === 'string' && cachedPic.startsWith('http') && !cachedPic.includes('flaticon.com/512/3135/3135715.png')) {
+                return cachedPic;
+            }
+            if (typeof getProfileAvatarUrl === 'function') {
+                const url = getProfileAvatarUrl(cachedUser);
+                if (url) return url;
+            }
+        }
+    }
+
+    // 4. Look in local avatar key
+    const localAvatar = localStorage.getItem(`rw_profile_avatar_${userId}`);
+    if (localAvatar) return localAvatar;
+
+    // 5. Use getProfileAvatarUrl fallback based on name/gender
+    if (typeof getProfileAvatarUrl === 'function') {
+        return getProfileAvatarUrl({
+            uid: userId,
+            id: userId,
+            name: chat.userName || chat.name,
+            email: chat.userEmail || chat.email
+        });
+    }
+
+    return 'https://cdn-icons-png.flaticon.com/512/3135/3135715.png';
+};
+
+const fetchMissingChatAvatars = async (chats = []) => {
+    if (isFetchingMissingChatAvatars || !Array.isArray(chats)) return;
+    const missingIds = [];
+    chats.forEach(chat => {
+        const uid = chat.userId || chat.id || chat.uid;
+        if (!uid || uid === ADMIN_UID || missingChatAvatarsQueue.has(uid)) return;
+        const inCache = Array.isArray(allUsersCache) && allUsersCache.some(u => String(u.id || u.uid) === String(uid));
+        if (!inCache) {
+            missingIds.push(uid);
+            missingChatAvatarsQueue.add(uid);
+        }
+    });
+
+    if (missingIds.length === 0) return;
+    isFetchingMissingChatAvatars = true;
+
+    try {
+        let addedAny = false;
+        const chunks = [];
+        for (let i = 0; i < missingIds.length; i += 10) {
+            chunks.push(missingIds.slice(i, i + 10));
+        }
+
+        for (const chunk of chunks) {
+            const promises = chunk.map(id => getDoc(doc(db, `artifacts/${appId}/public/data/users`, id)).catch(() => null));
+            const results = await Promise.all(promises);
+            results.forEach((snap) => {
+                if (snap && snap.exists()) {
+                    const data = { id: snap.id, uid: snap.id, ...snap.data() };
+                    if (Array.isArray(allUsersCache)) {
+                        allUsersCache.push(data);
+                    }
+                    addedAny = true;
+                }
+            });
+        }
+
+        if (addedAny && document.getElementById('admin-chats-list')) {
+            renderAdminChatsList();
+        }
+    } catch (e) {
+        console.warn('Fetch missing chat avatars failed:', e);
+    } finally {
+        isFetchingMissingChatAvatars = false;
+    }
+};
+
 const loadAdminChatsFromBackend = async (options = {}) => {
             const { silent = false, retry = true, subscribeRealtime = true } = options || {};
             if (!hasAdminSessionReadyOrCached()) return;
@@ -218,13 +332,18 @@ const loadAdminChatsFromBackend = async (options = {}) => {
                 let chatList = (data.chats || []).map(chat => {
                     const rawCleanId = (chat.room_id || '').replace(/^support_/, '');
                     const cleanUserId = chat.user_id && !chat.user_id.includes('_') ? chat.user_id : (rawCleanId.split('_')[0] || rawCleanId);
+                    const userProfile = allUsersCache.find(u => String(u.id || u.uid) === String(cleanUserId)) || {};
+                    const chatName = chat.user_name || userProfile.name || 'User';
+                    const chatEmail = chat.user_email || userProfile.email || '';
+                    const chatMobile = chat.user_mobile || getUserMobileValue(userProfile) || '';
                     return {
                         id: cleanUserId,
                         userId: cleanUserId,
                         roomId: chat.room_id || getSupportRoomId(cleanUserId),
-                        userName: chat.user_name || 'User',
-                        userEmail: chat.user_email || '',
-                        userMobile: chat.user_mobile || '',
+                        userName: chatName,
+                        userEmail: chatEmail,
+                        userMobile: chatMobile,
+                        userAvatar: resolveChatUserAvatar({ userId: cleanUserId, userName: chatName, userEmail: chatEmail, userAvatar: chat.user_avatar || userProfile.profilePhoto || userProfile.avatarUrl }),
                         lastMessage: chat.last_message || 'Tap to view chat history',
                         lastSenderId: chat.last_sender_id || '',
                         updatedAt: chat.updated_at || Date.now()
@@ -283,6 +402,7 @@ const loadAdminChatsFromBackend = async (options = {}) => {
 
                 if (chatList.length > 0) {
                     allSupportChatsCache = chatList;
+                    fetchMissingChatAvatars(chatList);
                 } else {
                     populateFallbackAdminChatsFromUsers();
                 }
@@ -310,7 +430,7 @@ const getAdminChatUserMeta = (user = {}) => {
                 userName: isMainOwner ? ownerProfile.userName : (user.name || user.fullName || user.displayName || user.email || 'User'),
                 userEmail: isMainOwner ? ownerProfile.userEmail : (user.email || ''),
                 userMobile: isMainOwner ? ownerProfile.userMobile : (user.mobile || user.phoneNumber || user.phone || ''),
-                userAvatar: isMainOwner ? ownerProfile.userAvatar : (user.profilePhoto || user.profile_photo || user.avatarUrl || user.avatar_url || '')
+                userAvatar: isMainOwner ? ownerProfile.userAvatar : resolveChatUserAvatar(user)
             };
         };
 
